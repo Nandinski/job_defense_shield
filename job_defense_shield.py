@@ -18,6 +18,7 @@ from efficiency import get_stats_dict
 from alert.datascience import datascience_node_violators
 
 from alert.zero_gpu_utilization import ZeroGpuUtilization
+from alert.low_gpu_utilization import LowGpuUtilization
 from alert.mig import MultiInstanceGPU
 from alert.zero_util_gpu_hours import ZeroUtilGPUHours
 from alert.gpu_fragmentation import MultinodeGPUFragmentation
@@ -107,6 +108,8 @@ if __name__ == "__main__":
                       help='Identify users with the most zero GPU utilization hours')
   parser.add_argument('--low-xpu-efficiency', action='store_true', default=False,
                       help='Identify users with low CPU/GPU efficiency')
+  parser.add_argument('--low-gpu-utilization', action='store_true', default=False,
+                      help='Identify running GPU jobs with low utilization')
   parser.add_argument('--datascience', action='store_true', default=False,
                       help='Identify jobs that unjustly used the datascience nodes')
   parser.add_argument('--excess-cpu-memory', action='store_true', default=False,
@@ -147,7 +150,7 @@ if __name__ == "__main__":
                       help='Specify partition(s) (e.g., --partition=gpu,mig)')
   parser.add_argument('--num-top-users', type=int, default=15,
                       help='Specify the number of users to consider')
-  parser.add_argument('--files', type=str, default="/tigress/jdh4/utilities/job_defense_shield/violations",
+  parser.add_argument('--files', type=str, default="/local/ubuntu/job_defense_shield/violations",
                       help='Path to the underutilization log files')
   parser.add_argument('--config-file', type=str, default=None,
                       help='Absolute path to the configuration file')
@@ -183,8 +186,8 @@ if __name__ == "__main__":
       print("Configuration file not found. Exiting ...")
       sys.exit()
 
-  if args.email and (os.environ["USER"] not in ["jdh4", "slurm"]):
-      print("The --email flag can currently only used by jdh4 and slurm to send emails. Exiting ...")
+  if args.email and (os.environ["USER"] not in ["ubuntu", "slurm"]):
+      print("The --email flag can currently only used by ubuntu and slurm to send emails. Exiting ...")
       sys.exit()
 
   #######################
@@ -268,7 +271,7 @@ if __name__ == "__main__":
   # convert slurm timestamps to seconds
   os.environ["SLURM_TIME_FORMAT"] = "%s"
 
-  flags = f"-a -X -P -n --clusters={args.clusters.replace('tiger', 'tiger2')}"
+  flags = f"-a -X -P -n --clusters={args.clusters}"
   if args.partition:
       flags = f"{flags} --partition={args.partition}"
   start_date = datetime.now() - timedelta(days=args.days)
@@ -289,6 +292,7 @@ if __name__ == "__main__":
             "start",
             "end",
             "qos",
+            "submitline",
             "state",
             "admincomment",
             "jobname"]  
@@ -349,6 +353,21 @@ if __name__ == "__main__":
 
   fmt = "%a %b %-d"
   s = f"{start_date.strftime(fmt)} - {datetime.now().strftime(fmt)}"
+  
+  ###########################################
+  ## RUNNING JOBS WITH LOW GPU UTILIZATION ##
+  ###########################################
+  if args.low_gpu_utilization:
+      alerts = [alert for alert in cfg.keys() if "low-gpu-utilization" in alert]
+      for alert in alerts:
+          low_gpu = LowGpuUtilization(df,
+                                      days_between_emails=args.days,
+                                      violation="low_gpu_utilization",
+                                      vpath=args.files,
+                                      subject="Jobs with Low GPU Utilization",
+                                      **cfg[alert])
+          if args.email:
+              low_gpu.send_emails_to_users()
  
   ############################################
   ## RUNNING JOBS WITH ZERO GPU UTILIZATION ##
@@ -628,7 +647,7 @@ if __name__ == "__main__":
   ## SEND EMAIL TO ADMINS ##
   ########################## 
   if args.report:
-    send_email(s, "halverson@princeton.edu", subject="Cluster utilization report", sender="halverson@princeton.edu")
+    send_email(s, "amandio.faustino@kaust.edu.sa", subject="Cluster utilization report", sender="amandio.faustino@kaust.edu.sa")
 
   print(s, end="\n\n")
   print(datetime.now())
