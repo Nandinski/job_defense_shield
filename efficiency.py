@@ -2,7 +2,8 @@ import json
 import gzip
 import base64
 import pandas as pd
-
+from collections import defaultdict
+from utils import SECONDS_PER_HOUR
 
 def get_stats_dict(ss64):
     """Convert the base64-encoded summary statistics to JSON."""
@@ -240,3 +241,47 @@ def cpu_nodes_with_zero_util(ss, jobid, cluster, verbose=True):
             return (-1, error_code)
     error_code = 0
     return (counter, error_code)
+
+def gpus_with_low_util(ss, low_util=20, steps=[1,2], verbose=True):
+    """Return dict with max number of steps where gpu util was below threshold. 
+       Step size is configured in jobstats in hours
+       The error code is needed since the summary statistics (ss) may be malformed.
+       Returns:
+           low_gpu_util_step[step][node] = [list_gpu_indices]
+       """
+
+    for key in ['nodes', 'total_time']:
+        if key not in ss:
+            if verbose:
+                msg = f"Warning: nodes not in ss for gpus_with_low_util."
+                print(msg, jobid, cluster, flush=True)
+            error_code = 2
+            return (-1, error_code) 
+    
+    hours_running = ss['total_time'] / SECONDS_PER_HOUR
+    steps = [step if step > hours_running for step in steps]
+    
+    low_gpu_util_step = defaultdict(defaultdict(list)) 
+    for node in ss['nodes']:
+        try:
+            gpus = list(ss['nodes'][node]['gpu_utilization_per_h'].keys())
+        except:
+            if verbose:
+                msg = f"gpu_utilization_per_h not found: node is {node} for gpus_with_low_util."
+                print(msg, jobid, cluster, flush=True)
+            error_code = 1
+            return (-1, error_code)
+        else:
+            low_util_gpus = defaultdict(str)
+            for gpu in gpus:
+                utils = ss['nodes'][node]['gpu_utilization_per_h'][gpu]
+                low = False
+                for step in steps:
+                    util = utils[-step] 
+                    if util < low_util:
+                        low = True
+                if low:
+                    low_gpu_util_step[step][node].append(gpu)
+                            
+    error_code = 0
+    return (low_gpu_util_step, error_code)    

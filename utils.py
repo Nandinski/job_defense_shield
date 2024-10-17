@@ -125,6 +125,8 @@ def seconds_to_slurm_time_format(seconds: int) -> str:
 
 def get_first_name(netid: str, formal: bool=False) -> str:
     """Get the first name of the user by calling ldapsearch."""
+    # For now we'll avoid calling ldapsearch, our setup requires adding the password here
+    return f"Hi {netid}"
     cmd = f"ldapsearch -x uid={netid} displayname"
     output = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True, timeout=5, text=True, check=True)
     lines = output.stdout.split('\n')
