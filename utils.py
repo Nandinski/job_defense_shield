@@ -125,27 +125,26 @@ def seconds_to_slurm_time_format(seconds: int) -> str:
 
 def get_first_name(netid: str, formal: bool=False) -> str:
     """Get the first name of the user by calling ldapsearch."""
-    # For now we'll avoid calling ldapsearch, our setup requires adding the password here
-    return f"Hi {netid}"
-    cmd = f"ldapsearch -x uid={netid} displayname"
-    output = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True, timeout=5, text=True, check=True)
-    lines = output.stdout.split('\n')
-    for line in lines:
-        if line.startswith("displayname:"):
-            full_name = line.replace("displayname:", "").strip()
-            if ": " in full_name:
-                full_name = b64decode(full_name).decode("utf-8")
-            if full_name.replace(".", "").replace(",", "").replace(" ", "").replace("-", "").isalpha():
-                return f"Dear {full_name.split()[0]}" if formal else f"Hi {full_name.split()[0]}"
-    return "Hello"
+    # For now we'll avoid calling ldapsearch directly, our setup requires adding the password here
+    # We can use this /home/faustiar/.local/bin/whois 
+    greeting = "Hi"
+    if formal:
+        greeting = "Dear"
 
-def send_email(s, addressee, subject="Slurm job alerts", sender="rcsystems@princeton.edu"):
+    cmd = f"/home/faustiar/.local/scripts/whois {netid} | col1"
+    output = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True, timeout=5, text=True, check=True)
+    name = output.stdout.strip()
+    if not name:
+        name = netid
+    return f"{greeting} {name}"
+
+def send_email(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.testbed"):
   """Send an email in HTML to the user."""
   msg = MIMEMultipart('alternative')
   msg['Subject'] = subject
   msg['From'] = sender
   msg['To'] = addressee
-  msg.add_header("reply-to", "cses@princeton.edu")
+  msg.add_header("reply-to", "amandio.faustino@kaust.edu.sa")
   text = "None"
   html = f'<html><head></head><body><font face="Courier New, Courier, monospace"><pre>{s}</pre></font></body></html>'
   part1 = MIMEText(text, 'plain'); msg.attach(part1)
@@ -155,21 +154,46 @@ def send_email(s, addressee, subject="Slurm job alerts", sender="rcsystems@princ
   s.quit()
   return None
 
-def send_email_cses(s, addressee, subject="Slurm job alerts", sender="rcsystems@princeton.edu"):
+def send_email_cses(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.testbed"):
   """Send an email in plain text to the user."""
   msg = MIMEMultipart('alternative')
   msg['Subject'] = subject
   msg['From'] = sender
   msg['To'] = addressee
-  msg.add_header("reply-to", "cses@princeton.edu")
+  msg.add_header("reply-to", "amandio.faustino@kaust.edu.sa")
   text = s
   html = f'<html><head></head><body><font face="Courier New, Courier, monospace"><pre>{s}</pre></font></body></html>'
   part1 = MIMEText(text, 'plain'); msg.attach(part1)
   #part2 = MIMEText(html, 'html');  msg.attach(part2)
-  s = smtplib.SMTP('localhost')
+  s = smtplib.SMTP('localhost', 25)
   s.sendmail(sender, addressee, msg.as_string())
   s.quit()
 
+def send_email_from_cmd(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.testbed"):
+  """Send an email in plain text to the user."""
+  cmd = "/usr/sbin/sendmail -t"
+  msg = f"""\
+To: {addressee}
+From: {sender}
+Reply-To: amandio.faustino@kaust.edu.sa;
+Content-Type: text/html;
+Subject: {subject}
+<html><head></head><body>
+<pre style="font-family: 'Courier New', Courier, monospace; font-size: 14px; color: #212529;">
+--- THIS IS AN AUTOMATIC EMAIL ---
+
+{s}
+</pre>
+</body></html>
+"""  
+  _ = subprocess.run(cmd,
+                     stdout=subprocess.PIPE,
+                     input=msg,
+                     shell=True,
+                     timeout=10,
+                     text=True,
+                     check=True)
+  
 def send_email_html(s, addressee, subject="Slurm job alerts", sender="rcsystems@princeton.edu"):
   """Send an email in HTML to the user. Use nested tables and styles: https://kinsta.com/blog/html-email/
      and https://www.emailvendorselection.com/create-html-email/"""

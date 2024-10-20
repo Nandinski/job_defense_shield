@@ -1,10 +1,9 @@
 %YAML 1.1
 ---
 low-gpu-utilization-mc:
-  low_gpu_util: 15
+  low_gpu_util: 20
   first_warning_minutes: 60
   cancel_minutes: 120
-  sampling_period_minutes: 15
   max_interactive_hours: 8
   clusters:
     - mc

@@ -59,6 +59,7 @@ def raw_dataframe_from_sacct(flags, start_date, fields, renamings=[], numeric_fi
         rw.rename(columns=renamings, inplace=True)
         rw = rw[pd.notna(rw.elapsedraw)]
         rw = rw[rw.elapsedraw.str.isnumeric()]
+        rw = rw[~rw['limit-minutes'].isin(['UNLIMITED', 'Partition_Limit'])]
         rw[numeric_fields] = rw[numeric_fields].apply(pd.to_numeric)
         if use_cache: rw.to_csv(fname, index=False)
     return rw
@@ -150,7 +151,7 @@ if __name__ == "__main__":
                       help='Specify partition(s) (e.g., --partition=gpu,mig)')
   parser.add_argument('--num-top-users', type=int, default=15,
                       help='Specify the number of users to consider')
-  parser.add_argument('--files', type=str, default="/local/ubuntu/job_defense_shield/violations",
+  parser.add_argument('--files', type=str, default="/home/faustiar/dev/job_defense_shield/violations",
                       help='Path to the underutilization log files')
   parser.add_argument('--config-file', type=str, default=None,
                       help='Absolute path to the configuration file')
@@ -186,7 +187,7 @@ if __name__ == "__main__":
       print("Configuration file not found. Exiting ...")
       sys.exit()
 
-  if args.email and (os.environ["USER"] not in ["ubuntu", "slurm"]):
+  if args.email and (os.environ["USER"] not in ["faustiar", "slurm"]):
       print("The --email flag can currently only used by ubuntu and slurm to send emails. Exiting ...")
       sys.exit()
 
@@ -313,9 +314,9 @@ if __name__ == "__main__":
   use_cache = False if (args.email or args.report) else True
   raw = raw_dataframe_from_sacct(flags, start_date, fields, renamings, numeric_fields, use_cache)
 
-  raw = raw[~raw.cluster.isin(["tukey", "perseus"])]
-  raw.cluster   =   raw.cluster.str.replace("tiger2", "tiger")
-  raw.partition = raw.partition.str.replace("datascience", "datasci")
+  # raw = raw[~raw.cluster.isin(["tukey", "perseus"])]
+  # raw.cluster   =   raw.cluster.str.replace("tiger2", "tiger")
+  # raw.partition = raw.partition.str.replace("datascience", "datasci")
   raw = raw[pd.notna(raw.state)]
   raw.state = raw.state.apply(lambda x: "CANCELLED" if "CANCEL" in x else x)
   raw.cores = raw.cores.astype("int64")
