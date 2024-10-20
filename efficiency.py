@@ -242,7 +242,7 @@ def cpu_nodes_with_zero_util(ss, jobid, cluster, verbose=True):
     error_code = 0
     return (counter, error_code)
 
-def gpus_with_low_util(ss, low_util=20, steps=[1,2], verbose=True):
+def gpus_with_low_util(ss, jobid, cluster, low_util=20, steps=[1,2], verbose=True):
     """Return dict with max number of steps where gpu util was below threshold. 
        Step size is configured in jobstats in hours
        The error code is needed since the summary statistics (ss) may be malformed.
@@ -255,13 +255,13 @@ def gpus_with_low_util(ss, low_util=20, steps=[1,2], verbose=True):
             if verbose:
                 msg = f"Warning: nodes not in ss for gpus_with_low_util."
                 print(msg, jobid, cluster, flush=True)
-            error_code = 2
+            error_code = 1
             return (-1, error_code) 
     
     hours_running = ss['total_time'] / SECONDS_PER_HOUR
-    steps = [step if step > hours_running for step in steps]
     
-    low_gpu_util_step = defaultdict(defaultdict(list)) 
+    low_gpu_util_step = defaultdict(lambda: defaultdict(list))
+    steps = [step for step in steps if step <= hours_running]
     for node in ss['nodes']:
         try:
             gpus = list(ss['nodes'][node]['gpu_utilization_per_h'].keys())
@@ -269,19 +269,22 @@ def gpus_with_low_util(ss, low_util=20, steps=[1,2], verbose=True):
             if verbose:
                 msg = f"gpu_utilization_per_h not found: node is {node} for gpus_with_low_util."
                 print(msg, jobid, cluster, flush=True)
-            error_code = 1
+            error_code = 2
             return (-1, error_code)
         else:
-            low_util_gpus = defaultdict(str)
             for gpu in gpus:
                 utils = ss['nodes'][node]['gpu_utilization_per_h'][gpu]
-                low = False
+                if len(utils) < len(steps):
+                    if verbose:
+                        msg = f"not enough gpu_util steps found: node is {node} gpu is {gpu} for gpus_with_low_util."
+                        print(msg, jobid, cluster, flush=True)
+                    error_code = 3
+                    return (-1, error_code)
                 for step in steps:
-                    util = utils[-step] 
+                    # Round util down to int part
+                    util = int(utils[-step][1]) 
                     if util < low_util:
-                        low = True
-                if low:
-                    low_gpu_util_step[step][node].append(gpu)
+                        low_gpu_util_step[step][node].append((gpu, util))
                             
     error_code = 0
     return (low_gpu_util_step, error_code)    
