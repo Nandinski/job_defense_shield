@@ -122,6 +122,18 @@ def seconds_to_slurm_time_format(seconds: int) -> str:
     seconds %= 60
     return "%s%02d:%02d" % (hour, minutes, seconds)
 
+def get_email(netid: str) -> str:
+    """Get the email of the user by calling ldapsearch."""
+    # For now we'll avoid calling ldapsearch directly, our setup requires adding the password here
+    # We can use this /home/faustiar/.local/bin/lsearch 
+
+    cmd = f"/home/faustiar/.local/scripts/lsearch {netid} | awk '/mail:/ {{print $2}}'"
+    output = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True, timeout=5, text=True, check=True)
+    mail = output.stdout.strip()
+    if not mail:
+        raise ValueError(f"Could not find the email for user {netid} on ldap")
+    return mail
+
 
 def get_first_name(netid: str, formal: bool=False) -> str:
     """Get the first name of the user by calling ldapsearch."""
@@ -154,7 +166,7 @@ def send_email(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.test
   s.quit()
   return None
 
-def send_email_cses(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.testbed"):
+def send_email_cses(s, addressee, subject="Slurm job alerts", sender="noreply@kaust.edu.sa"):
   """Send an email in plain text to the user."""
   msg = MIMEMultipart('alternative')
   msg['Subject'] = subject
@@ -169,23 +181,28 @@ def send_email_cses(s, addressee, subject="Slurm job alerts", sender="slurm@rocs
   s.sendmail(sender, addressee, msg.as_string())
   s.quit()
 
-def send_email_from_cmd(s, addressee, subject="Slurm job alerts", sender="slurm@rocs.testbed"):
-  """Send an email in plain text to the user."""
-  cmd = "/usr/sbin/sendmail -t"
+def send_email_from_cmd(s, addressee, subject="Slurm job alerts", sender="noreply@kaust.edu.sa", share_w=None):
+  """Send an email in html to the user by calling sendmail directly."""
+  
+  share_emails_bcc = ";".join(share_w)
   msg = f"""\
 To: {addressee}
 From: {sender}
-Reply-To: amandio.faustino@kaust.edu.sa;
+Bcc: {share_emails_bcc}
+Reply-To: amandio.faustino@kaust.edu.sa
 Content-Type: text/html;
-Subject: {subject}
+Subject: [ROCS-T] {subject}
+
 <html><head></head><body>
 <pre style="font-family: 'Courier New', Courier, monospace; font-size: 14px; color: #212529;">
 --- THIS IS AN AUTOMATIC EMAIL ---
+--- TESTING THE POLICY, IT WON'T BE ENFORCED YET ---
 
 {s}
 </pre>
 </body></html>
 """  
+  cmd = f"/usr/sbin/sendmail -f noreply@kaust.edu.sa -t"
   _ = subprocess.run(cmd,
                      stdout=subprocess.PIPE,
                      input=msg,

@@ -8,7 +8,8 @@ from utils import SECONDS_PER_MINUTE
 from utils import SECONDS_PER_HOUR
 from utils import MINUTES_PER_HOUR
 from utils import get_first_name
-from utils import send_email, send_email_cses,send_email_from_cmd
+from utils import get_email 
+from utils import send_email_from_cmd
 from efficiency import gpus_with_low_util
 
 class LowGpuUtilization(Alert):
@@ -58,13 +59,15 @@ class LowGpuUtilization(Alert):
             msk = self.jb["interactive"] & (self.jb.gpus == 1) & (self.jb["limit-minutes"] <= self.max_interactive_hours * MINUTES_PER_HOUR)
             self.jb = self.jb[~msk]
 
-            self.jb["jobstats"] = self.jb.apply(lambda row:
-                                                LowGpuUtilization.get_stats_for_running_job(row["jobid"], row["cluster"]), axis='columns')
+            self.jb["jobstats"] = self.jb.apply(lambda row: 
+                                                       LowGpuUtilization.get_stats_for_running_job(row["jobid"], row["cluster"]), axis='columns')
             
+            self.jb["eval_time"] = self.jb.apply(lambda row: row["elapsedraw"] / SECONDS_PER_HOUR - self.max_interactive_hours if row["interactive"] \
+                                                        else row["elapsedraw"] / SECONDS_PER_HOUR, axis='columns')      
             # Step size is configured in jobstats in hours
             steps = [1,2]
             self.jb["GPU-lu-tpl"] = self.jb.apply(lambda row: 
-                                                  gpus_with_low_util(row["jobstats"], row["jobid"], row["cluster"], low_util=self.low_gpu_util, steps=steps), axis='columns')
+                                                  gpus_with_low_util(row["jobstats"], row["eval_time"], row["jobid"], row["cluster"], low_util=self.low_gpu_util, steps=steps), axis='columns')
             self.jb["error-code"] = self.jb["GPU-lu-tpl"].apply(lambda tpl: tpl[1])
             self.jb = self.jb[self.jb["error-code"] == 0]
             self.jb["GPU-lu"] = self.jb["GPU-lu-tpl"].apply(lambda tpl: tpl[0])
@@ -74,7 +77,6 @@ class LowGpuUtilization(Alert):
                 for step, lu_step in low_gpu_util_steps.items():
                     gpus_low_util = []
                     for node in lu_step:
-                        # gpus_util = [f"{gpu[0]}({gpu[1]}%)" for gpu in lu_step[node]]
                         gpus_util = [f"{gpu[0]}:{gpu[1]:>2}%" for gpu in lu_step[node]]
                         gpus_low_util.append( node + "[" + ", ".join(gpus_util)  + "]" )
                     row[f"Low-GPU-{step}h"] = ",".join(gpus_low_util)
@@ -88,11 +90,13 @@ class LowGpuUtilization(Alert):
 
     def send_emails_to_users(self):
         email_cols = []
+
         for user in self.jb.NetID.unique():
+            user_mail = get_email(user)
             #################
             #### warning ####
             #################
-            usr = self.jb[(self.jb["Max-Low-GPU-step"] == 2) &
+            usr = self.jb[(self.jb["Max-Low-GPU-step"] == 1) &
                           (self.jb.NetID == user)].copy()
             print("Warning jobs:")
             print(usr)
@@ -129,9 +133,7 @@ class LowGpuUtilization(Alert):
                 s += f"     $ scancel {usr.JobID.values[0]}"
                 s += "\n\n"
 
-                # send_email(s, f"{user}@kaust.edu.sa", subject=f"{self.subject} - WARNING")
-                for email in self.admin_emails: 
-                    send_email_from_cmd(s, f"{email}", subject=f"{self.subject} - WARNING")
+                send_email_from_cmd(s, user_mail, subject=f"{self.subject} - WARNING", share_w=self.admin_emails)
                 print(s)
 
                 # append the new violations to the log file
@@ -175,19 +177,18 @@ class LowGpuUtilization(Alert):
                 vfile = f"{self.vpath}/{self.violation}/{user}.email.csv"
                 Alert.update_violation_log(usr, vfile)
                 
-                # send_email(s, f"{user}@kaust.edu.sa", subject=f"{self.subject}", sender="ubuntu@localhost")
-                for email in self.admin_emails: 
-                    send_email_from_cmd(s, f"{email}", subject=f"{self.subject} - CANCELED")
+                send_email_from_cmd(s, user_mail, subject=f"{self.subject} - CANCELED", share_w=self.admin_emails)
                 print(s)
-
+                
                 for jobid in usr.JobID.tolist():
                     cmd = f"scancel {jobid}"
-                    print(f"Fake: {cmd}")
                     # _ = subprocess.run(cmd,
                     #                    stdout=subprocess.PIPE,
                     #                    shell=True,
                     #                    timeout=10,
                     #                    text=True,
                     #                    check=True)
-                    with open("/home/faustiar/dev/job_defense_shield/cancelations.txt", "a") as fp:
+                    cfile = f"{self.vpath}/cancelations.txt"
+                    with open(cfile, "a") as fp:
                         fp.write(f"{jobid},{user}\n")
+                

@@ -242,7 +242,7 @@ def cpu_nodes_with_zero_util(ss, jobid, cluster, verbose=True):
     error_code = 0
     return (counter, error_code)
 
-def gpus_with_low_util(ss, jobid, cluster, low_util=20, steps=[1,2], verbose=True):
+def gpus_with_low_util(ss, eval_time, jobid, cluster, low_util=20, steps=[1,2], verbose=True):
     """Return dict with max number of steps where gpu util was below threshold. 
        Step size is configured in jobstats in hours
        The error code is needed since the summary statistics (ss) may be malformed.
@@ -258,10 +258,8 @@ def gpus_with_low_util(ss, jobid, cluster, low_util=20, steps=[1,2], verbose=Tru
             error_code = 1
             return (-1, error_code) 
     
-    hours_running = ss['total_time'] / SECONDS_PER_HOUR
-    
     low_gpu_util_step = defaultdict(lambda: defaultdict(list))
-    steps = [step for step in steps if step <= hours_running]
+    steps = [step for step in steps if step <= eval_time]
     for node in ss['nodes']:
         try:
             gpus = list(ss['nodes'][node]['gpu_utilization_per_h'].keys())
